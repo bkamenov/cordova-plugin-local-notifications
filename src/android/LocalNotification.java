@@ -25,10 +25,19 @@ package de.appplant.cordova.plugin.localnotification;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.media.AudioAttributes;
+import android.content.ContentResolver;
 import android.app.KeyguardManager;
 import android.content.Context;
 import android.util.Pair;
 import android.view.View;
+import android.net.Uri;
+import android.app.NotificationManager;
+import android.app.NotificationChannel;
+import android.media.RingtoneManager;
+import android.support.v4.app.NotificationCompat;
+import android.os.Build;
+import android.util.Log;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
@@ -67,11 +76,33 @@ public class LocalNotification extends CordovaPlugin {
     // Indicates if the device is ready (to receive events)
     private static Boolean deviceready = false;
 
+    private static Activity cordovaActivity;
+
     // Queues all events before deviceready
     private static ArrayList<String> eventQueue = new ArrayList<String>();
 
     // Launch details
     private static Pair<Integer, String> launchDetails;
+
+    private static NotificationChannel defaultNotificationChannel = null;
+    public static String defaultChannelId = null;
+    public static String defaultChannelName = null;
+
+    @Override
+    protected void pluginInitialize() {
+        cordovaActivity = this.cordova.getActivity();
+        this.cordova.getThreadPool().execute(new Runnable() {
+            public void run() {
+                try {
+                    defaultChannelId = "lm_default_channel";
+                    defaultChannelName = "Default";
+                    createDefaultChannel();
+                }catch (Exception e){
+                    Log.e("LocalNotification", e.getMessage());
+                }
+            }
+        });
+    }
 
     /**
      * Called after plugin construction and fields have been initialized.
@@ -171,6 +202,39 @@ public class LocalNotification extends CordovaPlugin {
                 } else
                 if (action.equals("notifications")) {
                     notifications(args, command);
+                } else
+                if (action.equals("createChannel")) {
+                    try
+                    {
+                        createChannel(command, args.getJSONObject(0));
+                    }
+                    catch(JSONException e)
+                    {
+                        Log.e("LocalNotification", e.getMessage());
+                    }
+                } else 
+                if (action.equals("deleteChannel")) {
+                    try
+                    {
+                        deleteChannel(command, args.getString(0));
+                    }
+                    catch(JSONException e)
+                    {
+                        Log.e("LocalNotification", e.getMessage());
+                    }
+                } else 
+                if (action.equals("listChannels")) {
+                    listChannels(command);
+                } else 
+                if (action.equals("setDefaultChannel")) {
+                    try
+                    {
+                        setDefaultChannel(command, args.getJSONObject(0));
+                    }
+                    catch(JSONException e)
+                    {
+                        Log.e("LocalNotification", e.getMessage());
+                    }
                 }
             }
         });
@@ -635,6 +699,212 @@ public class LocalNotification extends CordovaPlugin {
         return Manager.getInstance(cordova.getActivity());
     }
 
+    public void createChannel(final CallbackContext callbackContext, final JSONObject options) {
+        cordova.getThreadPool().execute(new Runnable() {
+            public void run() {
+                try {
+                    createChannel(options);
+                    callbackContext.success();
+                } catch (Exception e) {
+                    Log.e("LocalNotification", e.getMessage());
+                    callbackContext.error(e.getMessage());
+                }
+            }
+        });
+    }
+
+    protected static NotificationChannel createChannel(final JSONObject options) throws JSONException {
+        NotificationChannel channel = null;
+        // only call on Android O and above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            String id = options.getString("id");
+            Log.i("LocalNotification", "Creating channel id="+id);
+
+            if(channelExists(id)){
+                deleteChannel(id);
+            }
+
+            NotificationManager nm = (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
+            String packageName = cordovaActivity.getPackageName();
+
+            String name = options.optString("name", "");
+            Log.d("LocalNotification", "Channel "+id+" - name="+name);
+
+            int importance = options.optInt("importance", NotificationManager.IMPORTANCE_HIGH);
+            Log.d("LocalNotification", "Channel "+id+" - importance="+importance);
+
+            channel = new NotificationChannel(id,
+                    name,
+                    importance);
+
+            // Light
+            boolean light = options.optBoolean("light", true);
+            Log.d("LocalNotification", "Channel "+id+" - light="+light);
+            channel.enableLights(light);
+
+            int lightColor = options.optInt("lightColor", -1);
+            if (lightColor != -1) {
+                Log.d("LocalNotification", "Channel "+id+" - lightColor="+lightColor);
+                channel.setLightColor(lightColor);
+            }
+
+            // Visibility
+            int visibility = options.optInt("visibility", NotificationCompat.VISIBILITY_PUBLIC);
+            Log.d("LocalNotification", "Channel "+id+" - visibility="+visibility);
+            channel.setLockscreenVisibility(visibility);
+
+            // Badge
+            boolean badge = options.optBoolean("badge", true);
+            Log.d("LocalNotification", "Channel "+id+" - badge="+badge);
+            channel.setShowBadge(badge);
+
+            // Sound
+            String sound = options.optString("sound", "default");
+            AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build();
+            if ("ringtone".equals(sound)) {
+                channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), audioAttributes);
+                Log.d("LocalNotification", "Channel "+id+" - sound=ringtone");
+            } else if (sound != null && !sound.contentEquals("default")) {
+                Uri soundUri = Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + packageName + "/raw/" + sound);
+                channel.setSound(soundUri, audioAttributes);
+                Log.d("LocalNotification", "Channel "+id+" - sound="+sound);
+            } else if (sound != "false"){
+                channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), audioAttributes);
+                Log.d("LocalNotification", "Channel "+id+" - sound=default");
+            }else{
+                Log.d("LocalNotification", "Channel "+id+" - sound=none");
+            }
+
+            // Vibration: if vibration setting is an array set vibration pattern, else set enable vibration.
+            JSONArray pattern = options.optJSONArray("vibration");
+            if (pattern != null) {
+                int patternLength = pattern.length();
+                long[] patternArray = new long[patternLength];
+                for (int i = 0; i < patternLength; i++) {
+                    patternArray[i] = pattern.optLong(i);
+                }
+                channel.enableVibration(true);
+                channel.setVibrationPattern(patternArray);
+                Log.d("LocalNotification", "Channel "+id+" - vibrate="+pattern);
+            } else {
+                boolean vibrate = options.optBoolean("vibration", true);
+                channel.enableVibration(vibrate);
+                Log.d("LocalNotification", "Channel "+id+" - vibrate="+vibrate);
+            }
+
+            // Create channel
+            nm.createNotificationChannel(channel);
+        }
+        return channel;
+    }
+
+    protected static void createDefaultChannel() throws JSONException {
+        JSONObject options = new JSONObject();
+        options.put("id", defaultChannelId);
+        options.put("name", defaultChannelName);
+        createDefaultChannel(options);
+    }
+
+    protected static void createDefaultChannel(final JSONObject options) throws JSONException {
+        defaultNotificationChannel = createChannel(options);
+    }
+
+    public void setDefaultChannel(final CallbackContext callbackContext, final JSONObject options) {
+        cordova.getThreadPool().execute(new Runnable() {
+            public void run() {
+                try {
+                    deleteChannel(defaultChannelId);
+
+                    String id = options.optString("id", null);
+                    if(id != null){
+                        defaultChannelId = id;
+                    }
+
+                    String name = options.optString("name", null);
+                    if(name != null){
+                        defaultChannelName = name;
+                    }
+                    createDefaultChannel(options);
+                    callbackContext.success();
+                } catch (Exception e) {
+                    Log.e("LocalNotification", e.getMessage());
+                    callbackContext.error(e.getMessage());
+                }
+            }
+        });
+    }
+
+    public void deleteChannel(final CallbackContext callbackContext, final String channelID) {
+        cordova.getThreadPool().execute(new Runnable() {
+            public void run() {
+                try {
+                    deleteChannel(channelID);
+                    callbackContext.success();
+                } catch (Exception e) {
+                    Log.e("LocalNotification", e.getMessage());
+                    callbackContext.error(e.getMessage());
+                }
+            }
+        });
+    }
+
+    protected static void deleteChannel(final String channelID){
+        // only call on Android O and above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
+            nm.deleteNotificationChannel(channelID);
+        }
+    }
+
+    public void listChannels(final CallbackContext callbackContext) {
+        cordova.getThreadPool().execute(new Runnable() {
+            public void run() {
+                try {
+                    List<NotificationChannel> notificationChannels = listChannels();
+                    JSONArray channels = new JSONArray();
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        for (NotificationChannel notificationChannel : notificationChannels) {
+                            JSONObject channel = new JSONObject();
+                            channel.put("id", notificationChannel.getId());
+                            channel.put("name", notificationChannel.getName());
+                            channels.put(channel);
+                        }
+                    }
+                    callbackContext.success(channels);
+                } catch (Exception e) {
+                    Log.e("LocalNotification", e.getMessage());
+                    callbackContext.error(e.getMessage());
+                }
+            }
+        });
+    }
+
+    public static List<NotificationChannel> listChannels(){
+        List<NotificationChannel> notificationChannels = null;
+        // only call on Android O and above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationChannels = nm.getNotificationChannels();
+        }
+        return notificationChannels;
+    }
+
+    public static boolean channelExists(String channelId){
+        boolean exists = false;
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O){
+            List<NotificationChannel> notificationChannels = listChannels();
+            if(notificationChannels != null){
+                for (NotificationChannel notificationChannel : notificationChannels) {
+                    if(notificationChannel.getId() == channelId){
+                        exists = true;
+                    }
+                }
+            }
+        }
+        return exists;
+    }
 }
 
 // codebeat:enable[TOO_MANY_FUNCTIONS]

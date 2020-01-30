@@ -703,6 +703,34 @@ UNNotificationPresentationOptions const OptionAlert = UNNotificationPresentation
     }
 }
 
+- (void)createChannel:(CDVInvokedUrlCommand *)command {
+	[self.commandDelegate runInBackground:^{
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }];
+}
+
+- (void)setDefaultChannel:(CDVInvokedUrlCommand *)command {
+	[self.commandDelegate runInBackground:^{
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }];
+}
+
+- (void)deleteChannel:(CDVInvokedUrlCommand *)command {
+	[self.commandDelegate runInBackground:^{
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }];
+}
+
+- (void)listChannels:(CDVInvokedUrlCommand *)command {
+	[self.commandDelegate runInBackground:^{
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }];
+}
+
 @end
 
 // codebeat:enable[TOO_MANY_FUNCTIONS]

@@ -542,6 +542,23 @@ exports.fireQueuedEvents = function() {
     exports._exec('ready');
 };
 
+// Android-only
+exports.setDefaultChannel = function (options, success, error) {
+    exec(success, error, "LocalNotification", "setDefaultChannel", [options]);
+};
+
+exports.createChannel = function (options, success, error) {
+    exec(success, error, "LocalNotification", "createChannel", [options]);
+};
+
+exports.deleteChannel = function (channelID, success, error) {
+    exec(success, error, "LocalNotification", "deleteChannel", [channelID]);
+};
+
+exports.listChannels = function (success, error) {
+    exec(success, error, "LocalNotification", "listChannels", []);
+};
+
 /**
  * Merge custom properties with the default values.
  *

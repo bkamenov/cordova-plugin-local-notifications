@@ -49,4 +49,9 @@
 - (void) notification:(CDVInvokedUrlCommand*)command;
 - (void) notifications:(CDVInvokedUrlCommand*)command;
 
+- (void) createChannel:(CDVInvokedUrlCommand*)command;
+- (void) setDefaultChannel:(CDVInvokedUrlCommand*)command;
+- (void) deleteChannel:(CDVInvokedUrlCommand*)command;
+- (void) listChannels:(CDVInvokedUrlCommand*)command;
+
 @end
